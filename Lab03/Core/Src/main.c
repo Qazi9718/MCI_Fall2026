@@ -18,15 +18,11 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
-#include "usb_device.h"
-#include <stdio.h>
-#include <stdarg.h> // This fixes the va_list and va_start error
-#include <string.h> // This fixes the strlen error
-
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+//task4
+#include <stdlib.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -47,35 +43,56 @@
 /* Private variables ---------------------------------------------------------*/
 I2C_HandleTypeDef hi2c1;
 
-SPI_HandleTypeDef hspi1;
-
-UART_HandleTypeDef huart2;
+PCD_HandleTypeDef hpcd_USB_FS;
 
 /* USER CODE BEGIN PV */
-
+//task4
+// GPIO_PinState prev_pa0 = GPIO_PIN_RESET;
+// uint8_t value = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_I2C1_Init(void);
-static void MX_SPI1_Init(void);
-static void MX_USART2_UART_Init(void);
+static void MX_USB_PCD_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-  // Task 0
-void myPrintf(const char *fmt, ...) {
-    char buffer[128]; 
-    va_list args;
-    va_start(args, fmt);
-    vsnprintf(buffer, sizeof(buffer), fmt, args);
-    va_end(args);
-    HAL_UART_Transmit(&huart2, (uint8_t*)buffer, strlen(buffer), HAL_MAX_DELAY);
+void display_number(uint8_t num) {
+      // 1 means segment is ON (requires 0V/GND), 0 means segment is OFF (requires VCC)
+      uint8_t segment[16][7] = {
+          {1, 1, 1, 1, 1, 1, 0}, // 0
+          {0, 1, 1, 0, 0, 0, 0}, // 1
+          {1, 1, 0, 1, 1, 0, 1}, // 2
+          {1, 1, 1, 1, 0, 0, 1}, // 3
+          {0, 1, 1, 0, 0, 1, 1}, // 4
+          {1, 0, 1, 1, 0, 1, 1}, // 5
+          {1, 0, 1, 1, 1, 1, 1}, // 6
+          {1, 1, 1, 0, 0, 0, 0}, // 7
+          {1, 1, 1, 1, 1, 1, 1}, // 8
+          {1, 1, 1, 1, 0, 1, 1}, // 9
+          {1, 1, 1, 0, 1, 1, 1}, // A
+          {0, 0, 1, 1, 1, 1, 1}, // b
+          {1, 0, 0, 1, 1, 1, 0}, // C
+          {0, 1, 1, 1, 1, 0, 1}, // d
+          {1, 0, 0, 1, 1, 1, 1}, // E
+          {1, 0, 0, 0, 1, 1, 1}  // F
+      };
+
+    // Common Anode Logic: Set to RESET to turn ON, SET to turn OFF
+    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1, segment[num][0] ? GPIO_PIN_RESET : GPIO_PIN_SET);
+    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_2, segment[num][1] ? GPIO_PIN_RESET : GPIO_PIN_SET);
+    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_3, segment[num][2] ? GPIO_PIN_RESET : GPIO_PIN_SET);
+    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4, segment[num][3] ? GPIO_PIN_RESET : GPIO_PIN_SET);
+    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, segment[num][4] ? GPIO_PIN_RESET : GPIO_PIN_SET);
+    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_6, segment[num][5] ? GPIO_PIN_RESET : GPIO_PIN_SET);
+    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_7, segment[num][6] ? GPIO_PIN_RESET : GPIO_PIN_SET);
 }
+
 /* USER CODE END 0 */
 
 /**
@@ -87,6 +104,17 @@ int main(void)
 
   /* USER CODE BEGIN 1 */
 
+
+  //task3
+  // GPIO_PinState prev_pa0 = GPIO_PIN_RESET;
+  // GPIO_PinState prev_pb5 = GPIO_PIN_RESET;
+  // uint8_t count = 0; 
+
+  // GPIO_PinState prev = GPIO_PIN_RESET;
+  // uint8_t index = 0;
+
+  // uint8_t id[] = {0,9,7,1,8}; 
+  // uint8_t len = sizeof(id) / sizeof(id[0]);
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -108,109 +136,31 @@ int main(void)
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_I2C1_Init();
-  MX_SPI1_Init();
-  MX_USART2_UART_Init();
-  MX_USB_DEVICE_Init();
+  MX_USB_PCD_Init();
+ /* USER CODE BEGIN 2 */
+//task4
+  // GPIO_InitTypeDef GPIO_InitStruct = {0};
 
-  /* USER CODE BEGIN 2 */
-    myPrintf("Task 0:\r\n");
-    myPrintf("Hello, World!\r\n");
+  // GPIO_InitStruct.Pin = GPIO_PIN_0;
+  // GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  // GPIO_InitStruct.Pull = GPIO_PULLDOWN;
+  // HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
-    myPrintf("\nTask 1:\r\n");
-    int x = 42;
-    int y = 3;
-    myPrintf("Value of x = %d, y = %d\r\n", x, y);
-    // myPrintf("Uart works\r\n");
-    HAL_Delay(1000);
+ //task3
+  // Reconfigure PB4 with an internal PULL-DOWN resistor
+  // GPIO_InitTypeDef GPIO_InitStruct = {0};
+  // GPIO_InitStruct.Pin = GPIO_PIN_5;
+  // GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  // GPIO_InitStruct.Pull = GPIO_PULLDOWN; //Change GPIO_NOPULL to GPIO_PULLDOWN
+  // HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
-    myPrintf("\nTask 2:\r\n");
-    int a = 5;
-    int b = 7;
-    int LHS = (a+b)*(a+b);
-    int RHS = (a*a)+(2*a*b)+(b*b);
+  // // Reconfigure PA0 with an internal PULL-DOWN resistor
+  // GPIO_InitStruct.Pin = GPIO_PIN_0;
+  // GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  // GPIO_InitStruct.Pull = GPIO_PULLDOWN; // <--- Change GPIO_NOPULL to GPIO_PULLDOWN
+  // HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
-    // check if the identity holds
-    myPrintf("a = %d, b = %d\r\n", a, b);
-    myPrintf("LHS = %d\r\n", LHS);
-    myPrintf("RHS = %d\r\n", RHS);
-    myPrintf("Identity Verified: ");
-    if (LHS == RHS) {myPrintf("Yes\r\n");} 
-    else {myPrintf("No\r\n");}
-
-    HAL_Delay(1000);
-
-    myPrintf("\nTask 3:\r\n");
-    // static string
-    char str[] = "Microcontrollers";
-    myPrintf("Original:  %s\r\n", str);
-    // encryption key i.e. Student ID
-    int key = 9718;
-
-    // encrypt by shifting ASCII value of every char
-    // ch = ch + (key % 256);
-    for (int i = 0; str[i] != '\0'; i++) {
-        str[i] = str[i] + (key % 256);}  
-    myPrintf("Encrypted: %s\r\n", str);
-
-    // decrypt, reverse operation
-    //ch = ch - (key % 256);
-    for (int i = 0; str[i] != '\0'; i++) {
-        str[i] = str[i] - (key % 256);}
-    myPrintf("Decrypted: %s\r\n", str);
-
-    HAL_Delay(1000);
-
-    myPrintf("\nTask 4:\r\n");
-
-    int A[2][2] = {{1, 2}, {3, 4}};
-    int B[2][2] = {{5, 6}, {7, 8}};
-    int C[2][2] = {{0, 0}, {0, 0}};
-
-    // matrix multiplication using nested loops
-    for (int i=0; i<2; i++) {
-        for (int j=0; j<2; j++) {
-            for (int k=0; k<2; k++) {
-                C[i][j] += A[i][k]* B[k][j];}
-        }
-    }
-
-    myPrintf("Matrix A:\r\n");
-    for (int i = 0; i < 2; i++) {
-        myPrintf("%d %d\r\n", A[i][0], A[i][1]);
-    }
-
-    myPrintf("Matrix B:\r\n");
-    for (int i = 0; i < 2; i++) {
-        myPrintf("%d %d\r\n", B[i][0], B[i][1]);
-    }
-
-    myPrintf("Matrix C (A*B):\r\n");
-    for (int i = 0; i < 2; i++) {
-        myPrintf("%d %d\r\n", C[i][0], C[i][1]);
-    }
-
-    HAL_Delay(1000);
-
-    myPrintf("\nTask 5:\r\n");
-myPrintf("Armstrong Numbers between 100 and 999:\r\n");
-    // iterate from 100 to 999
-    for (int n =100; n <= 999; n++) {
-        int num = n;
-        int remainder = 0;
-        int result = 0; // initialized zero for each new no.
-        
-        // xtract digits and find sum of cubes of each digit
-        while (num != 0) {
-            remainder = num % 10;
-            result += (remainder * remainder * remainder);
-            num /= 10;}
-
-        if (result == n) {
-            myPrintf("%d\r\n", n);}
-        }
-
-    HAL_Delay(1000);
-
+  // display_number(count);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -221,11 +171,107 @@ myPrintf("Armstrong Numbers between 100 and 999:\r\n");
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+    // task 1 
+    //   for (uint8_t i = 0; i < 16; i++) {
+    //     display_number(i);
+    //     HAL_Delay(2000);
+    // 
 
+    //  task 2
+    
+    // GPIO_PinState current = HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0);
+    
+    // if (current == GPIO_PIN_SET && prev == GPIO_PIN_SET) {
+    //     HAL_Delay(40); 
+        
+    //     if (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0) == GPIO_PIN_RESET) {
+    //         index++;
+    //         if (index >= len) {
+    //             index = 0;
+    //         }
+    //         display_number(id[index]);
 
-  }
-  }
+            
+    //         while (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0) == GPIO_PIN_RESET) {
+               
+    //         }
+    //         HAL_Delay(40);
+    // }
+    // prev = current;
+
+    // task 3
+  // GPIO_PinState now_pa0 = HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0); // PA0 Button (+1)
+  // GPIO_PinState now_pb5 = HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_5); // PB5 Button (-1)
+
+  // // PA0 Pressed: Increment Counter
+  // if (now_pa0 == GPIO_PIN_SET && prev_pa0 == GPIO_PIN_RESET)
+  // { 
+  //     HAL_Delay(40); // Debounce delay
+
+  //     if (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0) == GPIO_PIN_SET)
+  //     {
+  //         count = (count + 1) % 16;
+  //         display_number(count);
+
+  //         // Wait until PA0 button is released
+  //         while (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0) == GPIO_PIN_SET);
+  //         HAL_Delay(40);
+  //     }
+  // }
+
+  // //PB4 Pressed: Decrement Counter
+  // if (now_pb5 == GPIO_PIN_SET && prev_pb5 == GPIO_PIN_RESET)
+  // {
+  //     HAL_Delay(40); // Debounce delay
+
+  //     if (HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_5) == GPIO_PIN_SET)
+  //     {
+  //         count = (count == 0) ? 15 : (count - 1);
+  //         display_number(count);
+
+  //         // Wait until PB4 button is released
+  //         while (HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_5) == GPIO_PIN_SET)
+  //         {
+  //             HAL_Delay(40);
+  //         }
+  //     }
+  // }
+
+  // // Update previous pin states
+  // prev_pa0 = now_pa0;
+  // prev_pb5 = now_pb5;
+
+  //task 4
+  // GPIO_PinState now_pa0 = HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0); // PA0 Button (USER Button)
+
+  // // Detect rising edge (button press)
+  // if (now_pa0 == GPIO_PIN_SET && prev_pa0 == GPIO_PIN_RESET)
+  // {
+  //     HAL_Delay(50); // Debounce delay
+
+  //     if (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0) == GPIO_PIN_SET)
+  //     {
+  //         // Generate random number between 1 and 6
+  //         value = (rand() % 6) + 1;
+          
+  //         // Display on 7-segment display
+  //         display_number(value);
+
+  //         // Wait until button is released
+  //         while (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0) == GPIO_PIN_SET)
+  //         {
+  //             HAL_Delay(10);
+  //         }
+  //         HAL_Delay(40); // Debounce release
+  //     }
+  // }
+
+  // prev_pa0 = now_pa0;
   /* USER CODE END 3 */
+  }
+
+  /* USER CODE END 3 */
+}
 
 /**
   * @brief System Clock Configuration
@@ -266,9 +312,7 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
-  PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_USB|RCC_PERIPHCLK_USART2
-                              |RCC_PERIPHCLK_I2C1;
-  PeriphClkInit.Usart2ClockSelection = RCC_USART2CLKSOURCE_PCLK1;
+  PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_USB|RCC_PERIPHCLK_I2C1;
   PeriphClkInit.I2c1ClockSelection = RCC_I2C1CLKSOURCE_HSI;
   PeriphClkInit.USBClockSelection = RCC_USBCLKSOURCE_PLL;
   if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInit) != HAL_OK)
@@ -293,7 +337,7 @@ static void MX_I2C1_Init(void)
 
   /* USER CODE END I2C1_Init 1 */
   hi2c1.Instance = I2C1;
-  hi2c1.Init.Timing = 0x2000090E;
+  hi2c1.Init.Timing = 0x00201D2B;
   hi2c1.Init.OwnAddress1 = 0;
   hi2c1.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
   hi2c1.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
@@ -326,77 +370,33 @@ static void MX_I2C1_Init(void)
 }
 
 /**
-  * @brief SPI1 Initialization Function
+  * @brief USB Initialization Function
   * @param None
   * @retval None
   */
-static void MX_SPI1_Init(void)
+static void MX_USB_PCD_Init(void)
 {
 
-  /* USER CODE BEGIN SPI1_Init 0 */
+  /* USER CODE BEGIN USB_Init 0 */
 
-  /* USER CODE END SPI1_Init 0 */
+  /* USER CODE END USB_Init 0 */
 
-  /* USER CODE BEGIN SPI1_Init 1 */
+  /* USER CODE BEGIN USB_Init 1 */
 
-  /* USER CODE END SPI1_Init 1 */
-  /* SPI1 parameter configuration*/
-  hspi1.Instance = SPI1;
-  hspi1.Init.Mode = SPI_MODE_MASTER;
-  hspi1.Init.Direction = SPI_DIRECTION_2LINES;
-  hspi1.Init.DataSize = SPI_DATASIZE_4BIT;
-  hspi1.Init.CLKPolarity = SPI_POLARITY_LOW;
-  hspi1.Init.CLKPhase = SPI_PHASE_1EDGE;
-  hspi1.Init.NSS = SPI_NSS_SOFT;
-  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_4;
-  hspi1.Init.FirstBit = SPI_FIRSTBIT_MSB;
-  hspi1.Init.TIMode = SPI_TIMODE_DISABLE;
-  hspi1.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
-  hspi1.Init.CRCPolynomial = 7;
-  hspi1.Init.CRCLength = SPI_CRC_LENGTH_DATASIZE;
-  hspi1.Init.NSSPMode = SPI_NSS_PULSE_ENABLE;
-  if (HAL_SPI_Init(&hspi1) != HAL_OK)
+  /* USER CODE END USB_Init 1 */
+  hpcd_USB_FS.Instance = USB;
+  hpcd_USB_FS.Init.dev_endpoints = 8;
+  hpcd_USB_FS.Init.speed = PCD_SPEED_FULL;
+  hpcd_USB_FS.Init.phy_itface = PCD_PHY_EMBEDDED;
+  hpcd_USB_FS.Init.low_power_enable = DISABLE;
+  hpcd_USB_FS.Init.battery_charging_enable = DISABLE;
+  if (HAL_PCD_Init(&hpcd_USB_FS) != HAL_OK)
   {
     Error_Handler();
   }
-  /* USER CODE BEGIN SPI1_Init 2 */
+  /* USER CODE BEGIN USB_Init 2 */
 
-  /* USER CODE END SPI1_Init 2 */
-
-}
-
-/**
-  * @brief USART2 Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_USART2_UART_Init(void)
-{
-
-  /* USER CODE BEGIN USART2_Init 0 */
-
-  /* USER CODE END USART2_Init 0 */
-
-  /* USER CODE BEGIN USART2_Init 1 */
-
-  /* USER CODE END USART2_Init 1 */
-  huart2.Instance = USART2;
-  huart2.Init.BaudRate = 115200;
-  huart2.Init.WordLength = UART_WORDLENGTH_8B;
-  huart2.Init.StopBits = UART_STOPBITS_1;
-  huart2.Init.Parity = UART_PARITY_NONE;
-  huart2.Init.Mode = UART_MODE_TX_RX;
-  huart2.Init.HwFlowCtl = UART_HWCONTROL_NONE;
-  huart2.Init.OverSampling = UART_OVERSAMPLING_16;
-  huart2.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
-  huart2.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
-  if (HAL_UART_Init(&huart2) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN USART2_Init 2 */
-
-  /* USER CODE END USART2_Init 2 */
+  /* USER CODE END USB_Init 2 */
 
 }
 
@@ -424,6 +424,10 @@ static void MX_GPIO_Init(void)
                           |LD7_Pin|LD9_Pin|LD10_Pin|LD8_Pin
                           |LD6_Pin, GPIO_PIN_RESET);
 
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1|GPIO_PIN_2|GPIO_PIN_3|GPIO_PIN_4
+                          |GPIO_PIN_5|GPIO_PIN_6|GPIO_PIN_7, GPIO_PIN_RESET);
+
   /*Configure GPIO pins : DRDY_Pin MEMS_INT3_Pin MEMS_INT4_Pin MEMS_INT1_Pin
                            MEMS_INT2_Pin */
   GPIO_InitStruct.Pin = DRDY_Pin|MEMS_INT3_Pin|MEMS_INT4_Pin|MEMS_INT1_Pin
@@ -448,6 +452,21 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(B1_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : PA1 PA2 PA3 PA4
+                           PA5 PA6 PA7 */
+  GPIO_InitStruct.Pin = GPIO_PIN_1|GPIO_PIN_2|GPIO_PIN_3|GPIO_PIN_4
+                          |GPIO_PIN_5|GPIO_PIN_6|GPIO_PIN_7;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : PB5 */
+  GPIO_InitStruct.Pin = GPIO_PIN_5;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
   /* USER CODE BEGIN MX_GPIO_Init_2 */
 
