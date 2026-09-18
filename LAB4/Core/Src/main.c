@@ -244,17 +244,11 @@ int main(void)
     printf("HELLO FROM STM32!\r\n");
     HAL_Delay(1000);
 
-
     // task 4
-
     printf("Period: %lu us | Frequency: %lu Hz\r\n",
            period_ticks, frequency_hz);
 
     HAL_Delay(200);
-
-
-    // printf("HELLO FROM STM32!\r\n");
-    // HAL_Delay(1000);
 
   }
   /* USER CODE END 3 */
