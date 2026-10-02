@@ -2,7 +2,7 @@
 /**
   ******************************************************************************
   * @file           : main.c
-  * @brief          : Main program body
+  * @brief          : Main program body (Task 2 Input Capture Frequency Meter)
   ******************************************************************************
   * @attention
   *
@@ -18,11 +18,12 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
-#include <stdio.h>
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include <string.h>
+#include <stdio.h>
+#include <stdarg.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -32,7 +33,9 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-
+// 48 MHz timer clock, PSC = 47 => 1 us tick rate[cite: 2]
+#define TIMER_HZ 1000000u
+#define ARR_MAX  65535u
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -52,22 +55,10 @@ UART_HandleTypeDef huart1;
 PCD_HandleTypeDef hpcd_USB_FS;
 
 /* USER CODE BEGIN PV */
-
-#define SAMPLES 10
-#define NUMERATOR 4800000.0f
-
-volatile uint32_t cap[SAMPLES];
-volatile uint8_t idx = 0;
-volatile uint8_t started = 0;
-volatile uint8_t print_flag = 0;
-
-uint32_t last_check = 0;
-
-// // Global variables added so you can view them in the STM32CubeIDE Debugger
-// volatile uint32_t debug_avg_period = 0;
-// volatile uint32_t debug_frequency = 0;
-// volatile uint32_t debug_error_margin = 0;
-
+/* USER CODE BEGIN PV */
+volatile uint32_t last_capture = 0;
+volatile uint32_t period_us = 0;
+volatile uint8_t new_data = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -79,55 +70,31 @@ static void MX_TIM2_Init(void);
 static void MX_USB_PCD_Init(void);
 static void MX_USART1_UART_Init(void);
 /* USER CODE BEGIN PFP */
-
+void myprintf(const char *fmt, ...);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
-extern UART_HandleTypeDef huart1; // dumbass
+  extern UART_HandleTypeDef huart1;
 
-int _write(int file, char *ptr, int len) 
-{
-    HAL_UART_Transmit(&huart1, (uint8_t *)ptr, len, HAL_MAX_DELAY);
-    return len;
-}
+  int _write(int file, char *ptr, int len) 
+  {
+      HAL_UART_Transmit(&huart1, (uint8_t *)ptr, len, HAL_MAX_DELAY);
+      return len;
+  }
 
-/* External Interrupt Callback */
-void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
-{
-    if (GPIO_Pin == GPIO_PIN_0)
-    {
-        if (started == 0)
-        {
-            __HAL_TIM_SET_COUNTER(&htim2, 0);
-
-            HAL_TIM_Base_Start(&htim2);
-
-            started = 1;
-        }
-        else
-        {
-            cap[idx] = __HAL_TIM_GET_COUNTER(&htim2);
-
-            idx++;
-
-            if (idx >= SAMPLES)
-            {
-                idx = 0;
-                print_flag = 1;
-
-                HAL_TIM_Base_Stop(&htim2);
-
-                started = 0;
-            }
-            else
-            {
-                __HAL_TIM_SET_COUNTER(&htim2, 0);
-            }
-        }
+  void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim) {
+    if (htim->Channel == HAL_TIM_ACTIVE_CHANNEL_1) {
+      uint32_t current_capture = HAL_TIM_ReadCapturedValue(htim, TIM_CHANNEL_1);
+      
+      // Unsigned 32-bit math naturally handles timer overflow
+      period_us = current_capture - last_capture;
+      last_capture = current_capture;
+      
+      new_data = 1; // Flag to tell main loop we have a new reading
     }
-}
+  }
 
 /* USER CODE END 0 */
 
@@ -166,39 +133,39 @@ int main(void)
   MX_USB_PCD_Init();
   MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
-
+  HAL_TIM_IC_Start_IT (& htim2 , TIM_CHANNEL_1 );
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+  float frequency = 0.0f;
+  
   while (1)
   {
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-    //printf("lalala");
-    // if (HAL_GetTick() - last_check >= 100)
-    // {
-    //     last_check = HAL_GetTick();
-    //     if (print_flag)
-    //     {
-    //         uint64_t sum = 0;
-    //         for (int i = 0; i < SAMPLES; i++)
-    //         {
-    //             sum += cap[i];
-    //         }
-    //         uint32_t avg_period =
-    //             (float)sum / (float)SAMPLES;
-    //         /* f = (48 x 10^6) / (average period) */
-    //         uint32_t f =
-    //             NUMERATOR / avg_period;
-    //         printf("avg_period=%lu, f=%lu Hz\r\n",
-    //                   avg_period,
-    //                   f);
-    //         print_flag = 0;
-    //     }
-    // }
+    printf("hi\r\n");
+    if (new_data == 1) 
+    {
+        new_data = 0; // Clear the flag
+        
+        if (period_us > 0) 
+        {
+            // Calculate frequency: 1 MHz clock tick rate (1 tick = 1 us)
+            frequency = 1000000.0f / (float)period_us;
+
+            // Print Period in us and Frequency in Hz
+            printf("Period: %lu us | Frequency: %.2f Hz\r\n", period_us, frequency);
+        } 
+        else 
+        {
+            printf("Period is zero!\r\n");
+        }
+    }
     
+    // Delay 500 ms to readably update the terminal
+    HAL_Delay(500);
   }
   /* USER CODE END 3 */
 }
@@ -353,30 +320,33 @@ static void MX_TIM2_Init(void)
 
   /* USER CODE END TIM2_Init 0 */
 
-  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
   TIM_MasterConfigTypeDef sMasterConfig = {0};
+  TIM_IC_InitTypeDef sConfigIC = {0};
 
   /* USER CODE BEGIN TIM2_Init 1 */
 
   /* USER CODE END TIM2_Init 1 */
   htim2.Instance = TIM2;
-  htim2.Init.Prescaler = 9;
+  htim2.Init.Prescaler = 48;
   htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
   htim2.Init.Period = 4294967295;
   htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
-  if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
-  if (HAL_TIM_ConfigClockSource(&htim2, &sClockSourceConfig) != HAL_OK)
+  if (HAL_TIM_IC_Init(&htim2) != HAL_OK)
   {
     Error_Handler();
   }
   sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
   sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
   if (HAL_TIMEx_MasterConfigSynchronization(&htim2, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sConfigIC.ICPolarity = TIM_INPUTCHANNELPOLARITY_RISING;
+  sConfigIC.ICSelection = TIM_ICSELECTION_DIRECTTI;
+  sConfigIC.ICPrescaler = TIM_ICPSC_DIV1;
+  sConfigIC.ICFilter = 0;
+  if (HAL_TIM_IC_ConfigChannel(&htim2, &sConfigIC, TIM_CHANNEL_1) != HAL_OK)
   {
     Error_Handler();
   }
@@ -469,7 +439,6 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOC_CLK_ENABLE();
   __HAL_RCC_GPIOF_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
-  __HAL_RCC_GPIOD_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
@@ -477,8 +446,10 @@ static void MX_GPIO_Init(void)
                           |LD7_Pin|LD9_Pin|LD10_Pin|LD8_Pin
                           |LD6_Pin, GPIO_PIN_RESET);
 
-  /*Configure GPIO pins : DRDY_Pin MEMS_INT3_Pin MEMS_INT4_Pin MEMS_INT2_Pin */
-  GPIO_InitStruct.Pin = DRDY_Pin|MEMS_INT3_Pin|MEMS_INT4_Pin|MEMS_INT2_Pin;
+  /*Configure GPIO pins : DRDY_Pin MEMS_INT3_Pin MEMS_INT4_Pin MEMS_INT1_Pin
+                           MEMS_INT2_Pin */
+  GPIO_InitStruct.Pin = DRDY_Pin|MEMS_INT3_Pin|MEMS_INT4_Pin|MEMS_INT1_Pin
+                          |MEMS_INT2_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_EVT_RISING;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(GPIOE, &GPIO_InitStruct);
@@ -493,16 +464,6 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOE, &GPIO_InitStruct);
-
-  /*Configure GPIO pin : PD0 */
-  GPIO_InitStruct.Pin = GPIO_PIN_0;
-  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  HAL_GPIO_Init(GPIOD, &GPIO_InitStruct);
-
-  /* EXTI interrupt init*/
-  HAL_NVIC_SetPriority(EXTI0_IRQn, 0, 0);
-  HAL_NVIC_EnableIRQ(EXTI0_IRQn);
 
   /* USER CODE BEGIN MX_GPIO_Init_2 */
 
@@ -520,7 +481,6 @@ static void MX_GPIO_Init(void)
 void Error_Handler(void)
 {
   /* USER CODE BEGIN Error_Handler_Debug */
-  /* User can add his own implementation to report the HAL error return state */
   __disable_irq();
   while (1)
   {
@@ -538,8 +498,7 @@ void Error_Handler(void)
 void assert_failed(uint8_t *file, uint32_t line)
 {
   /* USER CODE BEGIN 6 */
-  /* User can add his own implementation to report the file name and line number,
-     ex: printf("Wrong parameters value: file %s on line %d\r\n", file, line) */
+
   /* USER CODE END 6 */
 }
 #endif /* USE_FULL_ASSERT */

@@ -18,11 +18,14 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
-#include <stdio.h>
+#include "stm32f303xc.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include <string.h>
+#include <stdio.h>
+#include <stdarg.h>
+#include <unistd.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -52,22 +55,10 @@ UART_HandleTypeDef huart1;
 PCD_HandleTypeDef hpcd_USB_FS;
 
 /* USER CODE BEGIN PV */
-
-#define SAMPLES 10
-#define NUMERATOR 4800000.0f
-
-volatile uint32_t cap[SAMPLES];
-volatile uint8_t idx = 0;
-volatile uint8_t started = 0;
-volatile uint8_t print_flag = 0;
-
-uint32_t last_check = 0;
-
-// // Global variables added so you can view them in the STM32CubeIDE Debugger
-// volatile uint32_t debug_avg_period = 0;
-// volatile uint32_t debug_frequency = 0;
-// volatile uint32_t debug_error_margin = 0;
-
+#define TIMER_HZ 1000000u
+// Encoder PPR (pulses per revolution) - SET THIS CORRECTLY
+#define PPR 330u // <-- change to your encoder PPR
+uint32_t last_print = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -75,8 +66,8 @@ void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_I2C1_Init(void);
 static void MX_SPI1_Init(void);
-static void MX_TIM2_Init(void);
 static void MX_USB_PCD_Init(void);
+static void MX_TIM2_Init(void);
 static void MX_USART1_UART_Init(void);
 /* USER CODE BEGIN PFP */
 
@@ -85,48 +76,20 @@ static void MX_USART1_UART_Init(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
-extern UART_HandleTypeDef huart1; // dumbass
+extern UART_HandleTypeDef huart1; 
 
-int _write(int file, char *ptr, int len) 
-{
+int _write(int file, char *ptr, int len) {
     HAL_UART_Transmit(&huart1, (uint8_t *)ptr, len, HAL_MAX_DELAY);
     return len;
 }
 
-/* External Interrupt Callback */
-void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+// -------- wait for FALLING edge using polling --------
+static void wait_falling(GPIO_TypeDef *port, uint16_t pin)
 {
-    if (GPIO_Pin == GPIO_PIN_0)
-    {
-        if (started == 0)
-        {
-            __HAL_TIM_SET_COUNTER(&htim2, 0);
-
-            HAL_TIM_Base_Start(&htim2);
-
-            started = 1;
-        }
-        else
-        {
-            cap[idx] = __HAL_TIM_GET_COUNTER(&htim2);
-
-            idx++;
-
-            if (idx >= SAMPLES)
-            {
-                idx = 0;
-                print_flag = 1;
-
-                HAL_TIM_Base_Stop(&htim2);
-
-                started = 0;
-            }
-            else
-            {
-                __HAL_TIM_SET_COUNTER(&htim2, 0);
-            }
-        }
-    }
+// Ensure we start from HIGH (avoid catching the same level)
+while (HAL_GPIO_ReadPin(port, pin) == GPIO_PIN_RESET) { }
+// Wait HIGH -> LOW
+while (HAL_GPIO_ReadPin(port, pin) == GPIO_PIN_SET) { }
 }
 
 /* USER CODE END 0 */
@@ -139,6 +102,7 @@ int main(void)
 {
 
   /* USER CODE BEGIN 1 */
+
 
   /* USER CODE END 1 */
 
@@ -162,8 +126,8 @@ int main(void)
   MX_GPIO_Init();
   MX_I2C1_Init();
   MX_SPI1_Init();
-  MX_TIM2_Init();
   MX_USB_PCD_Init();
+  MX_TIM2_Init();
   MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
 
@@ -176,29 +140,45 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-    //printf("lalala");
-    // if (HAL_GetTick() - last_check >= 100)
-    // {
-    //     last_check = HAL_GetTick();
-    //     if (print_flag)
-    //     {
-    //         uint64_t sum = 0;
-    //         for (int i = 0; i < SAMPLES; i++)
-    //         {
-    //             sum += cap[i];
-    //         }
-    //         uint32_t avg_period =
-    //             (float)sum / (float)SAMPLES;
-    //         /* f = (48 x 10^6) / (average period) */
-    //         uint32_t f =
-    //             NUMERATOR / avg_period;
-    //         printf("avg_period=%lu, f=%lu Hz\r\n",
-    //                   avg_period,
-    //                   f);
-    //         print_flag = 0;
-    //     }
-    // }
-    
+    //printf("Heartbeat\r\n");
+    //HAL_Delay(1000);
+
+    // Wait for first falling edge
+    wait_falling(GPIOD, GPIO_PIN_9);
+
+    // First edge: start measurement
+    __HAL_TIM_SET_COUNTER(&htim2, 0);
+    HAL_TIM_Base_Start(&htim2);
+
+    // Wait for second falling edge
+    wait_falling(GPIOD, GPIO_PIN_9);
+
+    // Second edge: stop measurement
+    HAL_TIM_Base_Stop(&htim2);
+
+    // Read elapsed time
+    uint32_t captured_ticks =
+        __HAL_TIM_GET_COUNTER(&htim2);
+
+    if (captured_ticks > 0)
+    {
+        uint32_t frequency =
+            TIMER_HZ / captured_ticks;
+
+        uint32_t rpm =
+            (uint32_t)((60ULL * frequency) / PPR);
+
+        if (HAL_GetTick() - last_print >= 200)
+        {
+            last_print = HAL_GetTick();
+
+            printf("Ticks=%lu, Frequency=%lu Hz, RPM=%lu\r\n",
+                   captured_ticks,
+                   frequency,
+                   rpm);
+        }
+    }
+
   }
   /* USER CODE END 3 */
 }
@@ -269,7 +249,7 @@ static void MX_I2C1_Init(void)
 
   /* USER CODE END I2C1_Init 1 */
   hi2c1.Instance = I2C1;
-  hi2c1.Init.Timing = 0x00201D2B;
+  hi2c1.Init.Timing = 0x2000090E;
   hi2c1.Init.OwnAddress1 = 0;
   hi2c1.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
   hi2c1.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
@@ -360,7 +340,7 @@ static void MX_TIM2_Init(void)
 
   /* USER CODE END TIM2_Init 1 */
   htim2.Instance = TIM2;
-  htim2.Init.Prescaler = 9;
+  htim2.Init.Prescaler = 47;
   htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
   htim2.Init.Period = 4294967295;
   htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
@@ -477,8 +457,10 @@ static void MX_GPIO_Init(void)
                           |LD7_Pin|LD9_Pin|LD10_Pin|LD8_Pin
                           |LD6_Pin, GPIO_PIN_RESET);
 
-  /*Configure GPIO pins : DRDY_Pin MEMS_INT3_Pin MEMS_INT4_Pin MEMS_INT2_Pin */
-  GPIO_InitStruct.Pin = DRDY_Pin|MEMS_INT3_Pin|MEMS_INT4_Pin|MEMS_INT2_Pin;
+  /*Configure GPIO pins : DRDY_Pin MEMS_INT3_Pin MEMS_INT4_Pin MEMS_INT1_Pin
+                           MEMS_INT2_Pin */
+  GPIO_InitStruct.Pin = DRDY_Pin|MEMS_INT3_Pin|MEMS_INT4_Pin|MEMS_INT1_Pin
+                          |MEMS_INT2_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_EVT_RISING;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(GPIOE, &GPIO_InitStruct);
@@ -494,15 +476,17 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOE, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : PD0 */
-  GPIO_InitStruct.Pin = GPIO_PIN_0;
-  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
+  /*Configure GPIO pin : B1_Pin */
+  GPIO_InitStruct.Pin = B1_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(B1_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : PD9 */
+  GPIO_InitStruct.Pin = GPIO_PIN_9;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(GPIOD, &GPIO_InitStruct);
-
-  /* EXTI interrupt init*/
-  HAL_NVIC_SetPriority(EXTI0_IRQn, 0, 0);
-  HAL_NVIC_EnableIRQ(EXTI0_IRQn);
 
   /* USER CODE BEGIN MX_GPIO_Init_2 */
 
