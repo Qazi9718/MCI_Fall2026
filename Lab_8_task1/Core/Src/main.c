@@ -53,6 +53,13 @@ uint8_t rx_buf[1];  // Receive buffer (receives temperature byte)
 
 // State flag to track where we are in the read sequence
 volatile uint8_t spi_state = 0;
+
+
+#define CTRL_REG4           0x23  // Control register 4 for sensitivity[cite: 15]
+#define CTRL_REG4_VAL       0x00  // +/- 245 dps[cite: 15]
+
+int16_t x_offset = 0, y_offset = 0, z_offset = 0;
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -74,8 +81,49 @@ int _write(int file, char *ptr, int len) {
     HAL_UART_Transmit(&huart1, (uint8_t *)ptr, len, HAL_MAX_DELAY);
     return len;
 }
-/* USER CODE END 0 */
 
+void gyro_init(void) {
+    uint8_t tx[2] = { CTRL_REG1, CTRL_REG1_VAL };
+    HAL_GPIO_WritePin(GPIOE, CS_I2C_SPI_Pin, GPIO_PIN_RESET); // CS LOW
+    HAL_SPI_Transmit(&hspi1, tx, 2, HAL_MAX_DELAY);
+    HAL_GPIO_WritePin(GPIOE, CS_I2C_SPI_Pin, GPIO_PIN_SET);   // CS HIGH
+}
+
+void gyro_set_ctrl_reg4(void) {
+    uint8_t tx[2] = { CTRL_REG4, CTRL_REG4_VAL };
+    HAL_GPIO_WritePin(GPIOE, CS_I2C_SPI_Pin, GPIO_PIN_RESET); // CS LOW
+    HAL_SPI_Transmit(&hspi1, tx, 2, HAL_MAX_DELAY);
+    HAL_GPIO_WritePin(GPIOE, CS_I2C_SPI_Pin, GPIO_PIN_SET);   // CS HIGH
+}
+
+uint8_t spi_read(uint8_t reg) {
+    uint8_t tx[2];
+    uint8_t rx[2];
+    tx[0] = reg | 0x80; // Read command (MSB = 1)
+    tx[1] = 0x00;
+    HAL_GPIO_WritePin(GPIOE, CS_I2C_SPI_Pin, GPIO_PIN_RESET);
+    HAL_SPI_TransmitReceive(&hspi1, tx, rx, 2, HAL_MAX_DELAY);
+    HAL_GPIO_WritePin(GPIOE, CS_I2C_SPI_Pin, GPIO_PIN_SET);
+    return rx[1];
+}
+
+void gyro_calibrate(void) {
+    int32_t x_sum = 0, y_sum = 0, z_sum = 0;
+    const int samples = 30;
+    for(int i = 0; i < samples; i++) {
+        int16_t x = (int16_t)(spi_read(0x29) << 8 | spi_read(0x28));
+        int16_t y = (int16_t)(spi_read(0x2B) << 8 | spi_read(0x2A));
+        int16_t z = (int16_t)(spi_read(0x2D) << 8 | spi_read(0x2C));
+        x_sum += x;
+        y_sum += y;
+        z_sum += z;
+        HAL_Delay(5);
+    }
+    x_offset = x_sum / samples;
+    y_offset = y_sum / samples;
+    z_offset = z_sum / samples;
+}
+/* USER CODE END 0 */
 /**
   * @brief  The application entry point.
   * @retval int
@@ -98,17 +146,14 @@ int main(void)
   MX_USART1_UART_Init();
   MX_USB_PCD_Init();
 
-  /* USER CODE BEGIN 2 */
-  // Ensure CS is HIGH at startup (gyroscope deselected/idle)
+/* USER CODE BEGIN 2 */
   HAL_GPIO_WritePin(GPIOE, CS_I2C_SPI_Pin, GPIO_PIN_SET);
   HAL_Delay(100);
 
-  // Initialize the gyroscope (Power on, enable axes)
+  // Initialize gyroscope and set sensitivity
   gyro_init();
-  HAL_Delay(10);
-
-  // Request temperature reading via interrupt
-  Gyro_RequestTemperature();
+  gyro_set_ctrl_reg4();
+  gyro_calibrate();
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -118,6 +163,37 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+    uint8_t buffer[6];
+    // OUT_X_L (0x28) + Read bit (0x80) + Auto-increment bit (0x40) = 0xE8
+    uint8_t reg = 0x28 | 0x80 | 0x40; 
+
+    // 1. Perform a Burst Read for X, Y, and Z (6 bytes total)
+    HAL_GPIO_WritePin(GPIOE, CS_I2C_SPI_Pin, GPIO_PIN_RESET);
+    HAL_SPI_Transmit(&hspi1, &reg, 1, HAL_MAX_DELAY);
+    HAL_SPI_Receive(&hspi1, buffer, 6, HAL_MAX_DELAY);
+    HAL_GPIO_WritePin(GPIOE, CS_I2C_SPI_Pin, GPIO_PIN_SET);
+
+    // 2. Reconstruct 16-bit signed values (little-endian format: low byte first)[cite: 16]
+    int16_t x_raw = (int16_t)((buffer[1] << 8) | buffer[0]);
+    int16_t y_raw = (int16_t)((buffer[3] << 8) | buffer[2]);
+    int16_t z_raw = (int16_t)((buffer[5] << 8) | buffer[4]);
+
+    // 3. Convert to Degrees per Second (dps) using +/-245 dps factor (0.00875)[cite: 16]
+    float x_dps = (x_raw - x_offset) * 0.00875f;
+    float y_dps = (y_raw - y_offset) * 0.00875f;
+    float z_dps = (z_raw - z_offset) * 0.00875f;
+
+    // 4. Read Temperature separately from OUT_TEMP (0x26)[cite: 16]
+    int8_t temp = (int8_t)spi_read(TEMP_REG);
+
+    // 5. Send values via UART using comma-separated format: <temp>, <x_dps>, <y_dps>, <z_dps>[cite: 16]
+    printf("%d,%d,%d,%d\r\n",
+          temp,
+          (int)(x_dps * 100),
+          (int)(y_dps * 100),
+          (int)(z_dps * 100));
+
+    HAL_Delay(100); // 100 ms delay between readings[cite: 17]
   }
   /* USER CODE END 3 */
 }
@@ -359,19 +435,19 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
-void gyro_init(void)
-{
-    uint8_t tx[2] = { CTRL_REG1, CTRL_REG1_VAL };
+// void gyro_init(void)
+// {
+//     uint8_t tx[2] = { CTRL_REG1, CTRL_REG1_VAL };
 
-    // CS LOW — begin SPI communication
-    HAL_GPIO_WritePin(GPIOE, CS_I2C_SPI_Pin, GPIO_PIN_RESET);
+//     // CS LOW — begin SPI communication
+//     HAL_GPIO_WritePin(GPIOE, CS_I2C_SPI_Pin, GPIO_PIN_RESET);
 
-    // Send CTRL_REG1 address + value in one transmission (polling is fine for init)
-    HAL_SPI_Transmit(&hspi1, tx, 2, HAL_MAX_DELAY);
+//     // Send CTRL_REG1 address + value in one transmission (polling is fine for init)
+//     HAL_SPI_Transmit(&hspi1, tx, 2, HAL_MAX_DELAY);
 
-    // CS HIGH — end SPI communication
-    HAL_GPIO_WritePin(GPIOE, CS_I2C_SPI_Pin, GPIO_PIN_SET);
-}
+//     // CS HIGH — end SPI communication
+//     HAL_GPIO_WritePin(GPIOE, CS_I2C_SPI_Pin, GPIO_PIN_SET);
+// }
 
 void Gyro_RequestTemperature(void)
 {
